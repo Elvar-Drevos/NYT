@@ -22,7 +22,7 @@
     position: relative; overflow: hidden;
   }
 
-  .slide {
+  .slide, .intro-slide {
     position: absolute; inset: 0;
     opacity: 0;
     transition: opacity 2s ease-in-out;
@@ -31,8 +31,44 @@
     z-index: 1;
     will-change: opacity;
   }
-  .slide.active { opacity: 1; pointer-events: auto; z-index: 2; }
-  .slide.prev { opacity: 0; z-index: 1; transition: opacity 2.5s ease-in-out; }
+  .slide.active, .intro-slide.active { opacity: 1; pointer-events: auto; z-index: 2; }
+  .slide.prev, .intro-slide.prev { opacity: 0; z-index: 1; transition: opacity 2.5s ease-in-out; }
+
+  .intro-slide {
+    display: flex; align-items: center; justify-content: center;
+    flex-direction: column; gap: 2.5vh;
+    transition: opacity 1.5s ease-in-out;
+  }
+  .intro-bg {
+    position: absolute; inset: 0;
+    background: radial-gradient(ellipse at center, #1a1a1a 0%, #0a0a0a 70%);
+  }
+  .intro-glow {
+    position: absolute;
+    width: 50vmax; height: 50vmax;
+    border-radius: 50%;
+    opacity: 0.15;
+    background: radial-gradient(circle, #f0f0f0, transparent 70%);
+  }
+  .intro-logo {
+    position: relative; z-index: 2;
+    height: min(8vw, 12vh);
+    object-fit: contain;
+    filter: invert(1);
+  }
+  .intro-label {
+    position: relative; z-index: 2;
+    font-size: min(1.8vw, 2.8vh);
+    font-weight: 500;
+    letter-spacing: 0.3em;
+    text-transform: uppercase;
+    opacity: 0.5;
+  }
+  .intro-line {
+    position: relative; z-index: 2;
+    height: 2px; width: min(12vw, 150px);
+    background: #999;
+  }
 
   .news-bg-full {
     position: absolute; inset: -5%;
@@ -99,7 +135,6 @@
     font-weight: 400;
   }
 
-  /* ── NYT accent ── */
   .nyt-accent .source-logo { filter: invert(1); height: min(1.8vw, 2.8vh) !important; }
   .nyt-accent::before {
     content: ''; position: absolute; bottom: 0; left: 0;
@@ -107,7 +142,6 @@
     background: linear-gradient(90deg, #999, #999 30%, transparent);
   }
 
-  /* ═══ LOADING SCREEN ═══ */
   #loading-screen {
     position: fixed; inset: 0; z-index: 100;
     background: #0a0a0a;
@@ -142,7 +176,14 @@
 </div>
 
 <div id="wrapper">
-  <!-- NYT 1 -->
+  <div class="intro-slide" id="intro-nyt" data-duration="5000" data-intro="true">
+    <div class="intro-bg"></div>
+    <div class="intro-glow"></div>
+    <img class="intro-logo" src="https://upload.wikimedia.org/wikipedia/commons/7/77/The_New_York_Times_logo.png" alt="NYT">
+    <div class="intro-line"></div>
+    <span class="intro-label">Headlines</span>
+  </div>
+
   <div class="slide nyt-accent" id="nyt-0" data-duration="10000">
     <img class="news-bg-full" id="nyt-img-0" src="" alt="">
     <div class="news-gradient news-gradient-bottom"></div>
@@ -157,7 +198,6 @@
     </div>
   </div>
 
-  <!-- NYT 2 -->
   <div class="slide nyt-accent" id="nyt-1" data-duration="10000">
     <img class="news-bg-full" id="nyt-img-1" src="" alt="">
     <div class="news-gradient news-gradient-bottom"></div>
@@ -193,16 +233,9 @@ function parseRSSItems(xml) {
     let img = '';
     const media = item.querySelector('content[url], thumbnail[url]');
     if (media) img = media.getAttribute('url');
-    if (!img) {
-      const enc = item.querySelector('enclosure[url]');
-      if (enc && (enc.getAttribute('type') || '').startsWith('image')) img = enc.getAttribute('url');
-    }
-    if (!img) {
-      const m = get('description').match(/<img[^>]+src="([^"]+)"/);
-      if (m) img = m[1];
-    }
-    const tmp = document.createElement('div');
-    tmp.innerHTML = get('description');
+    if (!img) { const enc = item.querySelector('enclosure[url]'); if (enc && (enc.getAttribute('type') || '').startsWith('image')) img = enc.getAttribute('url'); }
+    if (!img) { const m = get('description').match(/<img[^>]+src="([^"]+)"/); if (m) img = m[1]; }
+    const tmp = document.createElement('div'); tmp.innerHTML = get('description');
     return { title: get('title'), description: tmp.textContent || '', pubDate: get('pubDate'), image: img };
   });
 }
@@ -215,25 +248,18 @@ async function fetchRSS(url) {
     const items = parseRSSItems(xml);
     if (items.length) return items;
   } catch (e) { console.warn('corsproxy failed:', e.message); }
-
   try {
     const resp = await fetch('https://api.rss2json.com/v1/api.json?count=10&rss_url=' + encodeURIComponent(url));
     if (!resp.ok) throw new Error('HTTP ' + resp.status);
     const data = await resp.json();
     if (data.items?.length) {
       return data.items.map(item => {
-        const tmp = document.createElement('div');
-        tmp.innerHTML = item.description;
-        return {
-          title: item.title,
-          description: tmp.textContent || '',
-          pubDate: item.pubDate,
-          image: item.thumbnail || item.enclosure?.link || (() => { const m = item.description?.match(/<img[^>]+src="([^"]+)"/); return m ? m[1] : ''; })()
-        };
+        const tmp = document.createElement('div'); tmp.innerHTML = item.description;
+        return { title: item.title, description: tmp.textContent || '', pubDate: item.pubDate,
+          image: item.thumbnail || item.enclosure?.link || (() => { const m = item.description?.match(/<img[^>]+src="([^"]+)"/); return m ? m[1] : ''; })() };
       });
     }
   } catch (e) { console.warn('rss2json failed:', e.message); }
-
   return [];
 }
 
@@ -249,101 +275,62 @@ async function fetchNews(url, pre, n) {
       if (desc) desc.textContent = item.description;
       if (img) img.src = item.image || PH;
     });
-  } catch (e) { console.warn('News err (' + pre + '):', e); }
+  } catch (e) { console.warn('News err:', e); }
 }
 
 function startScroll(slideEl) {
   const area = slideEl.querySelector('.news-desc-area');
   if (!area) return;
-  const p = area.querySelector('p');
-  if (!p) return;
-  p.style.transition = 'none';
-  p.style.transform = 'translateY(0)';
-  void p.offsetHeight;
+  const p = area.querySelector('p'); if (!p) return;
+  p.style.transition = 'none'; p.style.transform = 'translateY(0)'; void p.offsetHeight;
   const ov = p.scrollHeight - area.clientHeight;
-  if (ov > 10) {
-    setTimeout(() => {
-      p.style.transition = 'transform ' + (ov / 28) + 's linear';
-      p.style.transform = 'translateY(-' + ov + 'px)';
-    }, 3500);
-  }
+  if (ov > 10) { setTimeout(() => { p.style.transition = 'transform ' + (ov / 28) + 's linear'; p.style.transform = 'translateY(-' + ov + 'px)'; }, 3500); }
 }
 
 function preloadImage(src) {
   return new Promise(resolve => {
     if (!src || src === PH) return resolve();
-    const img = new Image();
-    img.onload = resolve;
-    img.onerror = resolve;
-    img.src = src;
+    const img = new Image(); img.onload = resolve; img.onerror = resolve; img.src = src;
     setTimeout(resolve, 8000);
   });
 }
 
-const slides = document.querySelectorAll('.slide');
+const allSlides = [document.getElementById('intro-nyt'), document.getElementById('nyt-0'), document.getElementById('nyt-1')];
 let cur = 0, timer = null;
 
 function activateSlide(i) {
-  const next = slides[i];
-  next.classList.add('active');
-  cur = i;
-
+  const next = allSlides[i]; next.classList.add('active'); cur = i;
   const newBg = next.querySelector('.news-bg-full');
-  if (newBg) {
-    newBg.style.transition = 'none';
-    newBg.style.transform = 'scale(1)';
-    requestAnimationFrame(() => requestAnimationFrame(() => {
-      newBg.style.transition = 'transform 12s ease-out';
-      newBg.style.transform = 'scale(1.08)';
-    }));
-  }
-
-  startScroll(next);
-
+  if (newBg) { newBg.style.transition = 'none'; newBg.style.transform = 'scale(1)';
+    requestAnimationFrame(() => requestAnimationFrame(() => { newBg.style.transition = 'transform 12s ease-out'; newBg.style.transform = 'scale(1.08)'; })); }
+  if (!next.dataset.intro) startScroll(next);
   const ago = next.querySelector('.news-ago');
   if (ago?.dataset.pubdate) ago.textContent = timeAgo(ago.dataset.pubdate);
-
-  const dur = parseInt(next.dataset.duration) || 15000;
+  const dur = parseInt(next.dataset.duration) || 10000;
   clearTimeout(timer);
-  timer = setTimeout(() => showSlide((cur + 1) % slides.length), dur);
+  if (i < allSlides.length - 1) { timer = setTimeout(() => showSlide(i + 1), dur); }
 }
 
 function deactivateSlide(i) {
-  const s = slides[i];
-  s.classList.remove('active');
-  s.classList.add('prev');
-  setTimeout(() => {
-    s.classList.remove('prev');
-    const bg = s.querySelector('.news-bg-full');
-    if (bg) { bg.style.transition = 'none'; bg.style.transform = 'scale(1)'; }
-  }, 2600);
+  const s = allSlides[i]; s.classList.remove('active'); s.classList.add('prev');
+  setTimeout(() => { s.classList.remove('prev'); const bg = s.querySelector('.news-bg-full'); if (bg) { bg.style.transition = 'none'; bg.style.transform = 'scale(1)'; } }, 2600);
 }
 
-function showSlide(i) {
-  deactivateSlide(cur);
-  activateSlide(i);
-}
+function showSlide(i) { deactivateSlide(cur); activateSlide(i); }
 
 const loadingScreen = document.getElementById('loading-screen');
 
 async function initSignage() {
   await fetchNews('https://rss.nytimes.com/services/xml/rss/nyt/World.xml', 'nyt', 2);
   document.getElementById('ll').classList.add('loaded');
-
-  const imgPromises = Array.from(document.querySelectorAll('.news-bg-full')).map(img =>
-    preloadImage(img.src)
-  );
-  await Promise.all(imgPromises);
-
+  await Promise.all(Array.from(document.querySelectorAll('.news-bg-full')).map(img => preloadImage(img.src)));
   loadingScreen.classList.add('fade-out');
   await new Promise(r => setTimeout(r, 800));
   loadingScreen.style.display = 'none';
-
   activateSlide(0);
 }
 
 initSignage();
-setInterval(() => fetchNews('https://rss.nytimes.com/services/xml/rss/nyt/World.xml', 'nyt', 2), 60000);
 </script>
 </body>
 </html>
