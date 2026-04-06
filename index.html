@@ -33,6 +33,8 @@
   }
   .slide.active, .intro-slide.active { opacity: 1; pointer-events: auto; z-index: 2; }
   .slide.prev, .intro-slide.prev { opacity: 0; z-index: 1; transition: opacity 2.5s ease-in-out; }
+  .slide.instant { transition: none; }
+  .intro-slide.instant-out { transition: none; opacity: 0; }
 
   .intro-slide {
     display: flex; align-items: center; justify-content: center;
@@ -298,11 +300,14 @@ function preloadImage(src) {
 const allSlides = [document.getElementById('intro-nyt'), document.getElementById('nyt-0'), document.getElementById('nyt-1')];
 let cur = 0, timer = null;
 
-function activateSlide(i) {
-  const next = allSlides[i]; next.classList.add('active'); cur = i;
+function activateSlide(i, instant) {
+  const next = allSlides[i];
+  if (instant) next.classList.add('instant');
+  next.classList.add('active'); cur = i;
   const newBg = next.querySelector('.news-bg-full');
   if (newBg) { newBg.style.transition = 'none'; newBg.style.transform = 'scale(1)';
-    requestAnimationFrame(() => requestAnimationFrame(() => { newBg.style.transition = 'transform 12s ease-out'; newBg.style.transform = 'scale(1.08)'; })); }
+    requestAnimationFrame(() => requestAnimationFrame(() => { newBg.style.transition = 'transform 12s ease-out'; newBg.style.transform = 'scale(1.08)';
+      if (instant) next.classList.remove('instant'); })); }
   if (!next.dataset.intro) startScroll(next);
   const ago = next.querySelector('.news-ago');
   if (ago?.dataset.pubdate) ago.textContent = timeAgo(ago.dataset.pubdate);
@@ -311,19 +316,45 @@ function activateSlide(i) {
   if (i < allSlides.length - 1) { timer = setTimeout(() => showSlide(i + 1), dur); }
 }
 
-function deactivateSlide(i) {
-  const s = allSlides[i]; s.classList.remove('active'); s.classList.add('prev');
-  setTimeout(() => { s.classList.remove('prev'); const bg = s.querySelector('.news-bg-full'); if (bg) { bg.style.transition = 'none'; bg.style.transform = 'scale(1)'; } }, 2600);
+function deactivateSlide(i, instant) {
+  const s = allSlides[i];
+  if (instant) {
+    s.classList.add('instant-out'); s.classList.remove('active');
+    setTimeout(() => s.classList.remove('instant-out'), 50);
+  } else {
+    s.classList.remove('active'); s.classList.add('prev');
+    setTimeout(() => { s.classList.remove('prev'); const bg = s.querySelector('.news-bg-full'); if (bg) { bg.style.transition = 'none'; bg.style.transform = 'scale(1)'; } }, 2600);
+  }
 }
 
-function showSlide(i) { deactivateSlide(cur); activateSlide(i); }
+function showSlide(i) {
+  const prev = allSlides[cur];
+  const isFromIntro = prev && prev.dataset.intro;
+  deactivateSlide(cur, isFromIntro);
+  activateSlide(i, isFromIntro);
+}
 
 const loadingScreen = document.getElementById('loading-screen');
+
+function waitForVisible() {
+  return new Promise(resolve => {
+    if (document.visibilityState === 'visible') return resolve();
+    const handler = () => {
+      if (document.visibilityState === 'visible') {
+        document.removeEventListener('visibilitychange', handler);
+        resolve();
+      }
+    };
+    document.addEventListener('visibilitychange', handler);
+  });
+}
 
 async function initSignage() {
   await fetchNews('https://rss.nytimes.com/services/xml/rss/nyt/World.xml', 'nyt', 2);
   document.getElementById('ll').classList.add('loaded');
   await Promise.all(Array.from(document.querySelectorAll('.news-bg-full')).map(img => preloadImage(img.src)));
+  await waitForVisible();
+  await new Promise(r => setTimeout(r, 300));
   loadingScreen.classList.add('fade-out');
   await new Promise(r => setTimeout(r, 800));
   loadingScreen.style.display = 'none';
