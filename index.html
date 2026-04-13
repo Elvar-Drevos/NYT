@@ -547,7 +547,7 @@ function renderWerkzaamheden(data) {
 
 function fetchDisruptions() {
   fetch(NS_API_BASE + '?actual=true', {
-    headers: { 'Ocp-Apim-Subscription-Key': NS_API_KEY }
+    headers: { 'Ocp-Apim-Subscription-Key': NS_API_KEY, 'Accept-Language': 'nl' }
   })
   .then(function(res) { return res.json(); })
   .then(function(data) {
