@@ -352,8 +352,8 @@ html, body {
 <div class="update-time" id="update-time"></div>
 
 <script>
-var NS_API_BASE = 'https://gateway.apiportal.ns.nl/reisinformatie-api/api/v3/disruptions';
-var NS_API_KEY = 'ee26abae888b455e94bd6e22915603de';
+var NS_API_BASE = 'https://gateway.apiportal.ns.nl/disruptions/v3';
+var NS_API_KEY = '6095d25bf06843e49be1abc6dc899702';
 var RSS2JSON = 'https://api.rss2json.com/v1/api.json?rss_url=';
 
 var RSS_FEEDS = [
@@ -545,11 +545,30 @@ function renderWerkzaamheden(data) {
   container.innerHTML = html;
 }
 
+function showDisruptionsError(msg) {
+  var html =
+    '<div class="empty-state">' +
+      '<div class="empty-state-icon empty-state-icon--neutral">' +
+        '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>' +
+      '</div>' +
+      '<div class="empty-state-text">' + escapeHtml(msg) + '</div>' +
+    '</div>';
+  document.getElementById('storingen-list').innerHTML = html;
+  document.getElementById('werkzaamheden-list').innerHTML = html;
+}
+
 function fetchDisruptions() {
   fetch(NS_API_BASE + '?actual=true', {
     headers: { 'Ocp-Apim-Subscription-Key': NS_API_KEY, 'Accept-Language': 'nl' }
   })
-  .then(function(res) { return res.json(); })
+  .then(function(res) {
+    if (!res.ok) {
+      throw new Error(res.status === 401 || res.status === 403
+        ? 'NS-sleutel niet geautoriseerd (' + res.status + ')'
+        : 'NS API fout (' + res.status + ')');
+    }
+    return res.json();
+  })
   .then(function(data) {
     renderStoringen(data);
     renderWerkzaamheden(data);
@@ -557,6 +576,7 @@ function fetchDisruptions() {
   })
   .catch(function(err) {
     console.error('NS API fout:', err);
+    showDisruptionsError(err.message || 'Verbinding met NS mislukt');
   });
 }
 
