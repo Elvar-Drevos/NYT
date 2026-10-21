@@ -354,14 +354,53 @@ html, body {
 <script>
 var NS_API_BASE = 'https://gateway.apiportal.ns.nl/disruptions/v3';
 var NS_API_KEY = '6095d25bf06843e49be1abc6dc899702';
-var RSS2JSON = 'https://api.rss2json.com/v1/api.json?rss_url=';
+var CORS_PROXIES = [
+  function(u) { return 'https://api.allorigins.win/raw?url=' + encodeURIComponent(u); },
+  function(u) { return 'https://corsproxy.io/?' + encodeURIComponent(u); },
+  function(u) { return 'https://api.codetabs.com/v1/proxy?quest=' + encodeURIComponent(u); }
+];
 
 var RSS_FEEDS = [
   { url: 'https://www.treinreiziger.nl/feed/', bron: 'Treinreiziger' },
   { url: 'https://www.spoorpro.nl/feed/', bron: 'Spoorpro' },
   { url: 'https://www.treinenweb.nl/rss', bron: 'Treinenweb' },
-  { url: 'http://treineninnederland.nl/feed.xml', bron: 'Treinen in NL' }
+  { url: 'https://treineninnederland.nl/feed.xml', bron: 'Treinen in NL' }
 ];
+
+function fetchWithProxy(url) {
+  var attempts = CORS_PROXIES.map(function(proxy) {
+    return fetch(proxy(url)).then(function(res) {
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      return res.text();
+    });
+  });
+  return Promise.any(attempts);
+}
+
+function parseRSSItems(xmlText, bron) {
+  var items = [];
+  try {
+    var parser = new DOMParser();
+    var doc = parser.parseFromString(xmlText, 'text/xml');
+    var entries = doc.querySelectorAll('item');
+    if (!entries.length) entries = doc.querySelectorAll('entry');
+    for (var i = 0; i < entries.length; i++) {
+      var el = entries[i];
+      var titleEl = el.querySelector('title');
+      var dateEl = el.querySelector('pubDate') || el.querySelector('published') || el.querySelector('updated');
+      if (titleEl) {
+        items.push({
+          title: stripHtml(titleEl.textContent || ''),
+          date: dateEl ? new Date(dateEl.textContent) : new Date(),
+          bron: bron
+        });
+      }
+    }
+  } catch (e) {
+    console.error('RSS parse fout (' + bron + '):', e);
+  }
+  return items;
+}
 
 function timeAgo(date) {
   var now = new Date();
@@ -621,18 +660,11 @@ function fetchNieuws() {
 
   for (var i = 0; i < RSS_FEEDS.length; i++) {
     (function(feed) {
-      fetch(RSS2JSON + encodeURIComponent(feed.url))
-        .then(function(res) { return res.json(); })
-        .then(function(data) {
-          if (data.status === 'ok' && data.items) {
-            for (var k = 0; k < data.items.length; k++) {
-              var ri = data.items[k];
-              allItems.push({
-                title: stripHtml(ri.title || ''),
-                date: new Date(ri.pubDate),
-                bron: feed.bron
-              });
-            }
+      fetchWithProxy(feed.url)
+        .then(function(xmlText) {
+          var items = parseRSSItems(xmlText, feed.bron);
+          for (var k = 0; k < items.length; k++) {
+            allItems.push(items[k]);
           }
         })
         .catch(function(err) {
