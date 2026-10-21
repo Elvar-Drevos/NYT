@@ -354,6 +354,11 @@ html, body {
 <script>
 var NS_API_BASE = 'https://gateway.apiportal.ns.nl/disruptions/v3';
 var NS_API_KEY = '6095d25bf06843e49be1abc6dc899702';
+// =============================================================
+// VUL HIER JE CLOUDFLARE WORKER URL IN (zie instructies)
+// =============================================================
+var CORS_PROXY = 'https://verkeer-proxy.thomas-schorn-zwolle.workers.dev/?url=';
+
 var RSS_FEEDS = [
   { url: 'https://www.treinreiziger.nl/feed/', bron: 'Treinreiziger' },
   { url: 'https://www.spoorpro.nl/feed/', bron: 'Spoorpro' },
@@ -384,47 +389,6 @@ function parseRSSItems(xmlText, bron) {
     console.error('RSS parse fout (' + bron + '):', e);
   }
   return items;
-}
-
-function fetchRSSFeed(feedUrl) {
-  // Methode 1: allorigins JSON endpoint (meest betrouwbaar, heeft CORS headers)
-  var p1 = fetch('https://api.allorigins.win/get?url=' + encodeURIComponent(feedUrl))
-    .then(function(r) { if (!r.ok) throw new Error('allorigins HTTP ' + r.status); return r.json(); })
-    .then(function(d) { if (!d.contents) throw new Error('allorigins leeg'); return d.contents; });
-
-  // Methode 2: corsproxy.io
-  var p2 = fetch('https://corsproxy.io/?' + encodeURIComponent(feedUrl))
-    .then(function(r) { if (!r.ok) throw new Error('corsproxy HTTP ' + r.status); return r.text(); });
-
-  // Methode 3: rss2json.com (originele methode, als JSON)
-  var p3 = fetch('https://api.rss2json.com/v1/api.json?rss_url=' + encodeURIComponent(feedUrl))
-    .then(function(r) { if (!r.ok) throw new Error('rss2json HTTP ' + r.status); return r.json(); })
-    .then(function(d) {
-      if (d.status !== 'ok' || !d.items) throw new Error('rss2json bad status');
-      // Zet rss2json format om naar XML-achtige string zodat parseRSSItems niet nodig is
-      return '__RSS2JSON__' + JSON.stringify(d.items);
-    });
-
-  // Methode 4: allorigins raw
-  var p4 = fetch('https://api.allorigins.win/raw?url=' + encodeURIComponent(feedUrl))
-    .then(function(r) { if (!r.ok) throw new Error('allorigins-raw HTTP ' + r.status); return r.text(); });
-
-  // Probeer alle methodes, eerste die lukt wint (polyfill-veilig)
-  var promises = [p1, p2, p3, p4];
-  return new Promise(function(resolve, reject) {
-    var errors = [];
-    var settled = false;
-    promises.forEach(function(p) {
-      p.then(function(val) {
-        if (!settled) { settled = true; resolve(val); }
-      }).catch(function(err) {
-        errors.push(err);
-        if (errors.length === promises.length) {
-          reject(new Error('Alle proxies gefaald: ' + errors.map(function(e) { return e.message; }).join(', ')));
-        }
-      });
-    });
-  });
 }
 
 function timeAgo(date) {
@@ -685,25 +649,13 @@ function fetchNieuws() {
 
   for (var i = 0; i < RSS_FEEDS.length; i++) {
     (function(feed) {
-      fetchRSSFeed(feed.url)
-        .then(function(result) {
-          var items;
-          if (typeof result === 'string' && result.indexOf('__RSS2JSON__') === 0) {
-            // rss2json format
-            try {
-              var jsonItems = JSON.parse(result.substring(12));
-              items = [];
-              for (var k = 0; k < jsonItems.length; k++) {
-                items.push({
-                  title: stripHtml(jsonItems[k].title || ''),
-                  date: new Date(jsonItems[k].pubDate),
-                  bron: feed.bron
-                });
-              }
-            } catch (e) { items = []; }
-          } else {
-            items = parseRSSItems(result, feed.bron);
-          }
+      fetch(CORS_PROXY + encodeURIComponent(feed.url))
+        .then(function(res) {
+          if (!res.ok) throw new Error('HTTP ' + res.status);
+          return res.text();
+        })
+        .then(function(xmlText) {
+          var items = parseRSSItems(xmlText, feed.bron);
           for (var k = 0; k < items.length; k++) {
             allItems.push(items[k]);
           }
